@@ -1,0 +1,41 @@
+<?xml version = "1.0"?>
+<Cube name="sales_cube">
+   <dimension name = "Product">
+      <pcolumn>product_id</pcolumn>
+      <column>product_name</column>
+   </dimension>
+   
+  <dimension name = "Branch">
+      <pcolumn>branch_id</pcolumn>
+      <column>branch_name</column>
+      <column>address</column>
+   </dimension>
+   
+   <dimension name = "Season">
+      <pcolumn>season_id</pcolumn>
+      <column>season_name</column> 
+   </dimension>  
+   
+   <facts name = "FACT">
+      <fact>sales_price</fact> 
+      <fact>Full_price</fact>
+      <fact>Quantity</fact> 	  
+   </facts>
+   
+   <aggregates>
+   <aggregate>ag_sum</aggregate>
+   <aggregate>ag_average</aggregate>
+   <aggregate>ag_count</aggregate>
+   </aggregates>
+   
+   <userchoices>
+   <dim>Product,Branch</dim>
+   <fac>sales_price,Quantity</fac>
+   <agre>sum,average,count</agre>
+   </userchoices>
+</Cube>
+
+
+
+
+

@@ -1,0 +1,905 @@
+package model;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+
+//import javax.lang.model.element.Element;
+//import javax.swing.text.Document;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
+import java.sql.Statement;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
+
+import pojo.Aggregates;
+
+import org.w3c.dom.NodeList;
+
+//import javassist.bytecode.analysis.ControlFlow.Node;
+
+public class Manager {
+
+	public static  ArrayList<String> u_dim=new ArrayList<>();
+	public static  ArrayList<String> u_facts=new ArrayList<>();
+	public static  ArrayList<String> u_aggregate=new ArrayList<>();
+	public static String databaseName;
+	static Connection connection;
+	public static long cubeTime;
+	public static long icebergTime;
+	public static void xmlupload(String str)
+	{
+
+	      try {
+	    	 String hello="/home/trnpandey/eclipse-workspace/Cube/"+str; 
+	         File inputFile = new File(hello);
+	         DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
+	         DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
+	         Document doc = dBuilder.parse(inputFile);
+	         doc.getDocumentElement().normalize();
+	         System.out.println("Root element :" + doc.getDocumentElement().getNodeName());
+	         System.out.println("the database name: "+doc.getDocumentElement().getAttribute("name"));
+	         String db="Create database "+doc.getDocumentElement().getAttribute("name");
+	         databaseName=doc.getDocumentElement().getAttribute("name");
+	         
+	 		
+	        createTable(db);
+	         
+	         String dimensions_table = "CREATE TABLE "+doc.getDocumentElement().getAttribute("name")+
+	        		 ".MasterDimensions (" 
+	  	            + "ID INT(64) NOT NULL AUTO_INCREMENT,"  
+	  	            + "dimensions VARCHAR(20)," 
+	  	            + "PRIMARY KEY(ID))"; 
+	         System.out.println(dimensions_table);
+	          createTable(dimensions_table);
+	          String facts_table = "CREATE TABLE "+doc.getDocumentElement().getAttribute("name")+
+	        		  ".MasterFacts (" 
+	   	            + "ID INT(64) NOT NULL AUTO_INCREMENT,"  
+	   	            + "facts VARCHAR(20),"  
+	   	            + "PRIMARY KEY(ID))"; 
+	          System.out.println(facts_table);
+	           createTable(facts_table);
+	          NodeList nList = doc.getElementsByTagName("dimension");
+	          
+	          NodeList b=doc.getElementsByTagName("pcolumn");
+	          String base="";
+	          for(int j=0;j<b.getLength();j++)
+	          {
+	         	 Node nNode = b.item(j);
+	         	 
+	         	 base+=nNode.getTextContent()+ " VARCHAR(20),";
+	         	 
+	          }
+	          System.out.println("----------------------------");
+	       
+	          for (int temp = 0; temp < nList.getLength(); temp++) {
+	             Node nNode = nList.item(temp);
+	             System.out.println("\nCurrent Element :" + nNode.getNodeName());
+	           
+	             if (nNode.getNodeType() == Node.ELEMENT_NODE) {
+	                Element eElement = (Element) nNode;
+	                System.out.println("Dimension name : " 
+	                   + eElement.getAttribute("name"));
+	                
+	                String insert_dimensions="insert into "+doc.getDocumentElement().getAttribute("name")+
+	              		  ".MasterDimensions (dimensions) values(?)" ;
+	                insert(insert_dimensions,eElement.getAttribute("name"));
+	               
+	                System.out.println("Primary key column : " 
+	                   + eElement
+	                   .getElementsByTagName("pcolumn")
+	                   .item(0)
+	                   .getTextContent());
+	           
+	                NodeList nList_columns =eElement.getChildNodes();
+	               // System.out.println("nodelists"+nList_columns.toString());
+	                //System.out.println(nList_columns.getLength());
+	                System.out.print("the attributes of dimension are : ");
+	              //  StringBuilder sb=new StringBuilder();
+	                String x="";
+	                for(int i=1;i<nList_columns.getLength();i++)
+	                {
+	             	   Node nNode_column = nList_columns.item(i);
+	             	   if(nNode_column.getNodeName().equals("column"))
+	             	   {
+	             		System.out.print(nNode_column.getTextContent() );
+	                    x+=nNode_column.getTextContent()+"  VARCHAR(20),";
+	             	   }
+	                }
+	              
+	                String myTableName = "CREATE TABLE "+doc.getDocumentElement().getAttribute("name")+
+	             		   "."+eElement.getAttribute("name") + " (" 
+	        	            + eElement.getElementsByTagName("pcolumn")
+	                     .item(0)
+	                     .getTextContent() +" INT(64) NOT NULL ,"  
+	        	            + x 
+	        	            + "PRIMARY KEY("+eElement.getElementsByTagName("pcolumn")
+	                     .item(0)
+	                     .getTextContent()+"))"; 
+	                System.out.println(myTableName);
+	                createTable(myTableName);
+	             }
+	          }
+	          
+	         
+	          System.out.println("FACTS:----------------------------");
+	          NodeList nList1 = doc.getElementsByTagName("facts");
+	         String f="";
+	          for(int i=0;i<nList1.getLength();i++)
+	          {
+	         	 Node nNode = nList1.item(i);
+	         	  NodeList nList_columns =nNode.getChildNodes();
+	               System.out.print("the facts are : ");
+	               for(int j=0;j<nList_columns.getLength();j++)
+	               {
+	            	   Node nNode_column = nList_columns.item(j);
+	            	   System.out.print(nNode_column.getTextContent());
+	            	  if(nNode_column.getNodeName().equals("fact"))
+	            	  {
+	            		  if(j<nList_columns.getLength()-1)
+	            	   f+=nNode_column.getTextContent()+" INT(20) ,";
+	            		  else
+	            			f+=nNode_column.getTextContent()+" INT(20) ";
+	            	  }
+	            	   
+	            	 String insert_dimensions="insert into "+doc.getDocumentElement().getAttribute("name")+
+	             		  ".MasterFacts (facts) values(?)" ;
+	             insert(insert_dimensions,nNode_column.getTextContent());
+	               }
+	         	 
+	          }
+	        System.out.println("AGGREGATES:----------------------------");
+	         NodeList nList2 = doc.getElementsByTagName("aggregates");
+	         String ag="";
+	         for(int i=0;i<nList2.getLength();i++)
+	         {
+	        	 Node nNode = nList2.item(i);
+	        	  NodeList nList_columns =nNode.getChildNodes();
+	              System.out.print("the aggregates are : ");
+	              for(int j=0;j<nList_columns.getLength();j++)
+	              {
+	           	   Node nNode_column = nList_columns.item(j);
+	           	   System.out.print(nNode_column.getTextContent());
+	           	  if(nNode_column.getNodeName().equals("aggregate"))
+	           	  {
+	           		  if(j<nList_columns.getLength()-1)
+	           	   ag+=nNode_column.getTextContent()+" INT(20) ,";
+	           		  else
+	           			ag+=nNode_column.getTextContent()+" INT(20) ";
+	           	  }
+	           	   
+	           	  }
+	        	 
+	         }
+	         String basetable="CREATE TABLE "+doc.getDocumentElement().getAttribute("name")+
+	        		 ".basetable (" 
+	   	           // + "ID INT(64) NOT NULL AUTO_INCREMENT,"  
+	   	            + base + f + ag.substring(0,ag.length()-1)+")";
+	   	            //+ "PRIMARY KEY(ID))"; 
+	         createTable(basetable);
+	         System.out.println(basetable);
+	         /*
+	          * <userchoices>
+	   <dim>Product,Branch</dim>
+	   <fac>sales_price,date</fac>
+	   <agre>sum,average,count</agre>
+	   </userchoices>
+	          */
+	   /*      System.out.println("USER CHOICES:----------------------------");
+	         NodeList nList3 = doc.getElementsByTagName("userchoices");
+	        
+	         Node nNode = nList3.item(0);
+	   	     NodeList nList_columns =nNode.getChildNodes();
+	   	  for(int j=0;j<nList_columns.getLength();j++)
+	      {
+	   	   Node nNode_column = nList_columns.item(j);
+	   	  if(nNode_column.getNodeName().equals("dim"))
+	   		  {
+	   		  String t[]=nNode_column.getTextContent().split(",");
+	   		  for(int i=0;i<t.length;i++)
+	   		  { u_dim.add(t[i]);
+	   		  System.out.print(t[i]+" ");
+	   		  }
+	   		  System.out.println("");
+	   		  }
+	   	  else if(nNode_column.getNodeName().equals("fac"))
+	   		{
+	   		String t[]=nNode_column.getTextContent().split(",");
+	   	    for(int i=0;i<t.length;i++)
+	   	    {
+	   		  u_facts.add(t[i]);
+	   	 System.out.print(t[i]+" ");
+	 		  }
+	 		  System.out.println("");
+	   		}
+	   	  else if(nNode_column.getNodeName().equals("agre"))
+	   		{
+	   		String t[]=nNode_column.getTextContent().split(",");
+	   	    for(int i=0;i<t.length;i++)
+	   	    {
+	   		  u_aggregate.add(t[i]); 
+	   	 System.out.print(t[i]+" ");
+	 		  }
+	 		  System.out.println("");
+	   		}
+	   }*/
+	    
+	        /* String basetable="CREATE TABLE "+doc.getDocumentElement().getAttribute("name")+
+	        		 ".basetable (" 
+	   	            + "ID INT(64) NOT NULL AUTO_INCREMENT,"  
+	   	            + base + f
+	   	            + "PRIMARY KEY(ID))"; */
+	        // createTable(basetable);
+	       
+	       //ImportCsv im =new ImportCsv(doc.getDocumentElement().getAttribute("name")) ;
+	      // im.readCsv();
+	         System.out.println("USER CHOICES:----------------------------");
+	         NodeList nList3 = doc.getElementsByTagName("userchoices");
+	        
+	         Node nNode = nList3.item(0);
+	   	     NodeList nList_columns =nNode.getChildNodes();
+	   	  for(int j=0;j<nList_columns.getLength();j++)
+	      {
+	   	   Node nNode_column = nList_columns.item(j);
+	   	  if(nNode_column.getNodeName().equals("dim"))
+	   		  {
+	   		  String t[]=nNode_column.getTextContent().split(",");
+	   		  for(int i=0;i<t.length;i++)
+	   		  { 
+	   			  if(t[i]!=null)
+	   			  {
+	   			  u_dim.add(t[i]);
+	   		  System.out.print(t[i]+" ");
+	   		String insert_user_dimensions="insert into application.user_choices (Dimensions) values(?)";
+	   	   	insert(insert_user_dimensions,t[i]);
+	   		  }
+	   		  System.out.println("");
+	   		  }
+	   		  }
+	   	  else if(nNode_column.getNodeName().equals("fac"))
+	   		{
+	   		String t[]=nNode_column.getTextContent().split(",");
+	   	    for(int i=0;i<t.length;i++)
+	   	    {
+	   	    	if(t[i]!=null)
+	   	    	{
+	   		  u_facts.add(t[i]);
+	   	 System.out.print(t[i]+" ");
+	   	String insert_user_facts="insert into application.user_choices (Facts) values(?)";
+	   	insert(insert_user_facts,t[i]);
+	 		  }
+	 		  System.out.println("");
+	   	    }
+	   		}
+	   	  else if(nNode_column.getNodeName().equals("agre"))
+	   		{
+	   		String t[]=nNode_column.getTextContent().split(",");
+	   	    for(int i=0;i<t.length;i++)
+	   	    {
+	   		  if(t[i]!=null)
+	   		  {
+	   	    	u_aggregate.add(t[i]); 
+	   		  
+	   	 System.out.print(t[i]+" ");
+	 	String insert_user_aggregates="insert into application.user_choices (Aggregate) values(?)";
+	   	insert(insert_user_aggregates,t[i]);
+	 		  }
+	   	    
+	 		  System.out.println("");
+	   	    }
+	   		}
+	   }
+	      } catch (Exception e) {
+	         e.printStackTrace();
+	      }
+	   }
+
+   public static void insert(String query,String val)
+   {
+		
+	   try
+	   {
+	   Class.forName("com.mysql.jdbc.Driver");
+		Connection con=DriverManager.getConnection("jdbc:mysql://localhost:3306/?user=root&password=root");
+		 PreparedStatement preparedStmt = con.prepareStatement(query);
+  	      preparedStmt.setString (1, val);
+  	    preparedStmt.execute();
+       // System.out.println("Table Created");
+        con.close();
+    }
+    catch (SQLException e ) {
+        System.out.println("An error has occured on Table Creation");
+        e.printStackTrace();
+    }
+    catch (ClassNotFoundException e) {
+        System.out.println("An Mysql drivers were not found");
+    }
+   }
+   public static  void createTable(String myTableName) {
+	    
+	    try {
+	    	Class.forName("com.mysql.jdbc.Driver");
+			Connection con=DriverManager.getConnection("jdbc:mysql://localhost:3306/?user=root&password=root");
+			Statement stmt=con.createStatement(); 
+			System.out.println(myTableName);
+			stmt.executeUpdate(myTableName);
+	       // System.out.println("Table Created");
+	        con.close();
+	    }
+	    catch (SQLException e ) {
+	        System.out.println("An error has occured on Table Creation");
+	        e.printStackTrace();
+	    }
+	    catch (ClassNotFoundException e) {
+	        System.out.println("An Mysql drivers were not found");
+	    }
+	}
+    static int x=1;
+	public void createlattice(String temp) throws ParserConfigurationException, SAXException, IOException, ClassNotFoundException, InstantiationException, IllegalAccessException
+	{
+		//String url="jdbc:mysql://localhost:3306/?user=root&password=root";
+		//Class.forName("com.mysql.jdbc.Driver").newInstance();
+		
+    	try {
+    		System.out.println(temp);
+	         
+    		 databaseName=temp;
+	         System.out.println(databaseName);
+	         String connectionURL =  "jdbc:mysql://localhost/"+databaseName;
+ 	 		 Class.forName("com.mysql.jdbc.Driver").newInstance();
+	 		 Connection con = DriverManager.getConnection(connectionURL, "root", "root");
+
+	         
+	         
+	         Statement stmt=con.createStatement();  
+				ResultSet rs=stmt.executeQuery("select * from basetable");
+				ResultSetMetaData md = rs.getMetaData();
+				int columns = md.getColumnCount();
+				int fact_vars=0, dim_vars=0; //no. of fact variables
+				int aggregate_functions=0;
+				ArrayList<String> dimensions = new ArrayList<>();
+				ArrayList<String> facts = new ArrayList<>();
+				ArrayList<String> aggregate = new ArrayList<>();
+				int i;
+				for(i=1;i<md.getColumnCount();i++) {
+					String cur_col = md.getColumnName(i);
+					if(cur_col.contains("_id")) {
+						dim_vars++;
+						dimensions.add(cur_col);
+					}
+					else if(cur_col.contains("ag_")){
+						aggregate_functions++;
+						aggregate.add(cur_col);
+					}
+					else
+					{
+						fact_vars++;
+						facts.add(cur_col);
+					}	
+				}
+				System.out.println(dimensions);
+				System.out.println(aggregate);
+			    System.out.println(facts);
+			
+			        long lStartTime = System.nanoTime();
+					printCombination(dimensions,facts,aggregate,con,md);
+					long lEndTime = System.nanoTime();
+	                cubeTime=(lEndTime - lStartTime)/1000000;
+					con.close(); 
+			}
+				
+			catch (SQLException e) {
+				 
+				e.printStackTrace();
+			}  
+	         
+		}
+	static void subsequence(ArrayList<String> str,HashSet<ArrayList<String>> st )
+	{
+
+	   int n = str.size();
+
+ 	   for (int i = 0; i < (1<<n); i++)
+    {
+        ArrayList<String> s=new ArrayList<>();
+        for (int j = 0; j < n; j++)
+
+            if ((i & (1 << j)) > 0)
+	    s.add(str.get(j));
+	    st.add(s);
+    }
+}
+static void printCombination(ArrayList<String> dimensions,ArrayList<String> facts,ArrayList<String> aggregates,
+		Connection con,ResultSetMetaData md)
+{
+	HashSet<ArrayList<String> > st = new HashSet<>();
+	subsequence(dimensions,st);
+	ArrayList<String> t=new ArrayList<>();
+	st.remove(t);
+	HashMap<ArrayList<String>,String> h=new HashMap<>();
+	String tablename="d";
+	int i=1;
+	for(ArrayList<String> t1 :st)
+	{
+
+		h.put(t1,tablename+i);
+		i++;
+	}
+	String query="";
+	for(int j=0;j<facts.size();j++)
+	{
+		String temp=facts.get(j);
+		query=query.concat(temp).concat("  INT(20), ");
+	}
+	for(int j=0;j<aggregates.size();j++)
+	{
+		query=query.concat(aggregates.get(j)).concat(" INT(20) ,");
+	}
+	query=query.substring(0, query.length()-2);
+			System.out.println(query);//facts and aggregates
+	
+			/* f1 varchar(),aggre varchat() */
+	for (HashMap.Entry<ArrayList<String>,String> entry : h.entrySet()) 
+     	{
+		String table_name=entry.getValue();//d1
+		ArrayList<String> temp=entry.getKey();//dimensions
+		//StringBuilder dimen_query=new StringBuilder();
+		String dimen_query="";
+		for(int j=0;j<temp.size();j++)
+		{
+			dimen_query=dimen_query.concat(temp.get(j)+" VARCHAR(20),");
+			
+		}
+//		String main_query="CREATE TABLE "+ databaseName+"."+ table_name +"( "+dimen_query+" "+query+")";
+		System.out.println(dimen_query);
+		dimen_query=dimen_query.substring(0,dimen_query.length()-1);
+		String main_query="CREATE TABLE "+ databaseName+"."+ table_name +"( "+dimen_query+")";
+		System.out.println(main_query);
+		createTable(main_query);
+		try
+		{
+		Statement stmt=con.createStatement();
+		String query1="select * from "+ databaseName+"."+ table_name ;
+		stmt.executeQuery(query1);
+		}
+		catch (Exception e)
+		{
+				e.printStackTrace();
+		}
+		
+	}
+}
+	public void csvupload(String str,String csvname)
+	{
+		try {
+    		
+    		databaseName=str; 
+			System.out.println(databaseName);
+	         String connectionURL =  "jdbc:mysql://localhost/"+databaseName;
+ 	 		 Class.forName("com.mysql.jdbc.Driver").newInstance();
+	 		 Connection con = DriverManager.getConnection(connectionURL, "root", "root");
+	 		 readCsvUsingLoad(csvname,con);
+		}
+		catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	public static void readCsvUsingLoad(String csvFile, Connection con)
+	{
+		connection = con;
+		try
+		{
+			    String hello="/home/trnpandey/eclipse-workspace/Cube/"+csvFile; 
+				String q=getloadquery();
+				String loadQuery = "LOAD DATA LOCAL INFILE '" + hello + q;
+				System.out.println(loadQuery);
+				Statement stmt = connection.createStatement();
+				stmt.execute(loadQuery);
+		}
+		catch (Exception e)
+		{
+				e.printStackTrace();
+		}
+	}
+	
+	public static String getloadquery() throws Exception {
+		String st;
+		StringBuilder s;
+		try 
+		{
+			PreparedStatement stmt = connection.prepareStatement("SELECT * FROM basetable");
+			ResultSet rs = stmt.executeQuery();
+			ResultSetMetaData rsmd = rs.getMetaData();
+			int columnCount = rsmd.getColumnCount();
+
+			s=new StringBuilder();
+			s.append("' INTO TABLE basetable FIELDS TERMINATED BY ','  LINES TERMINATED BY '\n' IGNORE 1 LINES (");
+
+			for (int i = 1; i <= columnCount; i++ ) {
+				String name = rsmd.getColumnName(i);
+				if(i!=columnCount)
+						s.append(name+",");
+	else
+		s.append(name+")");
+}
+				
+		} 
+		catch (Exception e)
+		{
+			throw e;
+		}
+	st=s.toString();
+	return st;
+	}
+//CHANGE THIS CODE PLEASE ASAP
+	public void fullcube(String dbname) throws InstantiationException, IllegalAccessException, ClassNotFoundException
+	{
+		//System.out.println(dbname);
+		try
+		{
+			long lStartTime = System.nanoTime();
+			String connectionURL =  "jdbc:mysql://localhost/"+"application";
+			Class.forName("com.mysql.jdbc.Driver").newInstance();
+			Connection con = DriverManager.getConnection(connectionURL, "root", "root");
+			Statement stmt=con.createStatement();  
+		//	StringBuilder dimensions = new StringBuilder();
+			ResultSet rs = stmt.executeQuery("select Dimensions from user_choices where Dimensions is not null");
+
+			int no_dim=-1;
+			String dimensions[]=new String[1000];
+			int l=0;
+			while(rs.next())
+			{
+				dimensions[l]=rs.getString("Dimensions").toLowerCase()+ "_id";
+				l++;
+			}
+			rs = stmt.executeQuery("select Facts from user_choices where Facts is not null");
+			String fact[]=new String[1000];
+			no_dim=l;
+			double k=Math.pow(2,no_dim);
+			/*for(int i=1;i<k;i++)
+			{
+				String q="drop table "+dbname+".d"+i;
+				stmt.execute(q);
+			}*/
+			int no_facts=-1;
+			l=0;
+			while(rs.next())	
+			{
+				fact[l]=rs.getString("Facts").toLowerCase();
+				l++;
+			}
+			no_facts=l;
+			rs = stmt.executeQuery("select Aggregate from user_choices where Aggregate is not null");
+			String Aggregate[]=new String[1000];
+			l=0;
+			int no_agg=-1;
+			while(rs.next())	
+			{
+				Aggregate[l]=rs.getString("Aggregate").toLowerCase();
+				l++;
+			}
+			no_agg=l;
+			/*
+			 insert into table t1 values
+			 */
+			//Tarun new code start
+			String connectionURL_1 =  "jdbc:mysql://localhost/"+dbname;
+	 		 Class.forName("com.mysql.jdbc.Driver").newInstance();
+	 		 Connection con_2 = DriverManager.getConnection(connectionURL_1, "root", "root");
+	         Statement stmt_2=con_2.createStatement();  
+			ResultSet rs1=stmt_2.executeQuery("select * from "+dbname+".basetable");
+			ResultSetMetaData md = rs1.getMetaData();
+			int columns = md.getColumnCount();
+			int fact_vars=0, dim_vars=0; //no. of fact variables
+			int aggregate_functions=0;
+			ArrayList<String> dimension1 = new ArrayList<>();
+			ArrayList<String> fact1 = new ArrayList<>();
+			ArrayList<String> aggregate1 = new ArrayList<>();
+			int i1;
+			for(i1=1;i1<md.getColumnCount();i1++) {
+				String cur_col = md.getColumnName(i1);
+				if(cur_col.contains("_id")) {
+					dim_vars++;
+					dimension1.add(cur_col);
+				}
+				else if(cur_col.contains("ag_")){
+					aggregate_functions++;
+					aggregate1.add(cur_col);
+				}
+				else
+				{
+					fact_vars++;
+					fact1.add(cur_col);
+				}	
+			}
+			HashSet<ArrayList<String> > st = new HashSet<>();
+			subsequence(dimension1,st);
+			ArrayList<String> t=new ArrayList<>();
+			st.remove(t);
+			HashMap<ArrayList<String>,String> h=new HashMap<>();
+			String tablename="d";
+			int j1=1;
+			for(ArrayList<String> t1 :st)
+			{
+
+				h.put(t1,tablename+j1);
+				j1++;
+			}
+			for (HashMap.Entry<ArrayList<String>,String> entry : h.entrySet()) 
+	     	{
+			String table_name=entry.getValue();//d1
+			ArrayList<String> temp=entry.getKey();//dimensions
+			System.out.println(table_name);
+			System.out.println(temp);
+//		insert into d1 (product_id,branch_id) select distinct product_id,branch_id from basetable;
+			String temp_query="";
+			for(int k1=0;k1<temp.size();k1++)
+			{
+				temp_query+=temp.get(k1)+",";
+			}
+			temp_query=temp_query.substring(0,temp_query.length()-1);
+			System.out.println(temp_query);
+		//	String main_query="insert into "+table_name+" ("+temp_query+") select distinct "+temp_query+" from basetable";
+			String ag_fact_query="";
+			for(int i=0;i<no_agg;i++)
+			{
+				for(int j=0;j<no_facts;j++)
+				{
+					if(Aggregate[i].equals("average"))
+					{
+						Aggregate[i]="avg";
+					}
+					ag_fact_query+=Aggregate[i]+"("+fact[j]+")"+",";
+					
+				}
+			}
+			ag_fact_query=ag_fact_query.substring(0,ag_fact_query.length()-1);
+		
+			String main_query="create table "+table_name+"0  select distinct "+temp_query +","+
+		 ag_fact_query+" from "+dbname+".basetable group by "+temp_query;
+	
+			stmt_2.execute(main_query);
+			System.out.println(main_query);
+	     	}
+			//Tarun new code end
+			
+			String dim="";
+			for(int i=0;i<no_dim;i++)
+			{
+				System.out.println(dimensions[i]);
+				dim+=dimensions[i];
+				dim+=",";
+			}
+			for(int i=0;i<no_facts;i++)
+				System.out.println(fact[i]);
+
+			for(int i=0;i<no_agg;i++)
+			{
+				System.out.println(Aggregate[i]);
+				if(Aggregate[i].equals("average"))
+					Aggregate[i]="avg";
+			}
+			String ag_fact_query="";
+			for(int i=0;i<no_agg;i++)
+			{
+				for(int j=0;j<no_facts;j++)
+				{
+					ag_fact_query+=Aggregate[i]+"("+fact[j]+")"+",";
+				}
+			}
+			ag_fact_query=ag_fact_query.substring(0,ag_fact_query.length()-1);
+			//System.out.println(dim);
+			//System.out.println(ag_fact_query);
+			// create temporary table if not exists  dump as (select branch_id,product_id, sum(sales_price),sum(Quantity),avg(sales_price),avg(Quantity),count(sales_price),count(Quantity) from sales_cube.basetable group by branch_id,product_id);
+			
+			String query="create table "+dbname+".cube as (select "+dim+" "+ag_fact_query+" from "+dbname+".basetable group by "+dim;
+			query=query.substring(0, query.length()-1);
+			query+=");";
+			//System.out.println(query);
+			//stmt.execute(query);
+			//System.out.println(dim+ag_fact_query);
+			//dim=dim.substring(0, dim.length()-1);
+			//System.out.println(dim);
+			
+			//select branch_id,product_id, sum(sales_price),sum(Quantity),avg(sales_price),avg(Quantity),count(sales_price),count(Quantity) from basetable group by branch_id,product_id;
+			
+			
+			/*	 String connectionURL =  "jdbc:mysql://localhost/"+"application";
+ 	 		 Class.forName("com.mysql.jdbc.Driver").newInstance();
+	 		 Connection con = DriverManager.getConnection(connectionURL, "root", "root");
+	 		
+		Statement stmt=con.createStatement();  
+		StringBuilder dimensions = new StringBuilder();
+		 ResultSet rs = stmt.executeQuery("select Dimensions from user_choices where Dimensions is not null");
+		while(rs.next())
+			dimensions.append(rs.getString("Dimensions").toLowerCase()+"_id,");
+		
+		StringBuilder facts = new StringBuilder();
+		 rs = stmt.executeQuery("select Facts from user_choices where Facts is not null");
+			while(rs.next())	
+		facts.append(rs.getString("Facts")+",");
+		StringBuilder aggregate = new StringBuilder();
+		rs = stmt.executeQuery("select Aggregate from user_choices where Aggregate is not null");
+		while(rs.next())	
+			aggregate.append("ag_"+rs.getString("Aggregate")+",");
+		
+		String ag=aggregate.toString();
+		//System.out.println(ag);
+		String query="select "+ dimensions.toString() +facts.toString()+
+				ag.substring(0, ag.length()-1)+" from "+dbname+".basetable" ;
+		System.out.println(query);
+		
+		long lStartTime = System.nanoTime();
+		stmt.execute(query);	
+		long lEndTime = System.nanoTime();
+	    cubeTime+=(lEndTime - lStartTime)/1000000;*/
+			stmt.execute(query);	
+			long lEndTime = System.nanoTime();
+		    cubeTime=(lEndTime - lStartTime)/1000000; //10000;
+	//	 String timeq="create table time (Full_cube_time VARHCHAR(50),Iceberg_cube_time VARCHAR(50));";
+		// stmt.execute(timeq);
+		 insert("insert into application.time (Full_cube_time) values(?)",String.valueOf(cubeTime));
+		 
+	}
+	catch (SQLException e) {
+			
+			e.printStackTrace();
+		}  
+
+	}
+	public ArrayList<Aggregates> getAggregates(String dbname) throws InstantiationException, IllegalAccessException, ClassNotFoundException, SQLException{
+		String url="select Aggregate from user_choices where Aggregate is not null";
+		ArrayList<Aggregates> agr=new ArrayList<>();
+		String connectionURL =  "jdbc:mysql://localhost/"+"application";
+		Class.forName("com.mysql.jdbc.Driver").newInstance();
+		connection = DriverManager.getConnection(connectionURL, "root", "root");
+		
+		PreparedStatement ps=(PreparedStatement) connection.prepareStatement(url);
+		ResultSet rs = ps.executeQuery();
+		
+		while(rs.next()) {
+				Aggregates ag= new Aggregates();
+				ag.setDim1(rs.getString("Aggregate")); // column name of aggregates
+				agr.add(ag);
+			}
+		return agr;
+	}
+	
+	public ArrayList<Aggregates> getfacts(String dbname) throws InstantiationException, IllegalAccessException, ClassNotFoundException, SQLException{
+		String url="select Facts from user_choices where Facts is not null";
+		ArrayList<Aggregates> agr=new ArrayList<>();
+		String connectionURL =  "jdbc:mysql://localhost/"+"application";
+		Class.forName("com.mysql.jdbc.Driver").newInstance();
+		connection = DriverManager.getConnection(connectionURL, "root", "root");
+		
+		PreparedStatement ps=(PreparedStatement) connection.prepareStatement(url);
+		ResultSet rs = ps.executeQuery();
+		
+		while(rs.next()) {
+				Aggregates ag= new Aggregates();
+				ag.setDim1(rs.getString("Facts")); // column name of aggregates
+				agr.add(ag);
+			}
+		return agr;
+	}
+	
+	private static boolean isPowerOf2(final int n) {
+		 if (n <= 0) {
+		     return false;
+		 }
+		 return (n & (n - 1)) == 0;
+    }
+	public static void iceberg(String dbname, String aggr_name,String thres,String fact1) throws SQLException, InstantiationException, IllegalAccessException, ClassNotFoundException
+	{
+		
+		System.out.println(dbname+" "+aggr_name+" "+thres+" "+fact1);
+		int thres_value=Integer.parseInt(thres);
+		String connectionURL =  "jdbc:mysql://localhost/"+"application";
+		Class.forName("com.mysql.jdbc.Driver").newInstance();
+		Connection con = DriverManager.getConnection(connectionURL, "root", "root");
+		Statement stmt=con.createStatement();  
+	//	StringBuilder dimensions = new StringBuilder();
+		ResultSet rs = stmt.executeQuery("select Dimensions from user_choices where Dimensions is not null");
+
+		int n=-1;
+		String dimensions[]=new String[1000];
+		int l=0;
+		while(rs.next())
+		{
+			dimensions[l]=rs.getString("Dimensions").toLowerCase()+ "_id";
+			l++;
+		}
+		rs = stmt.executeQuery("select Facts from user_choices where Facts is not null");
+		String fact[]=new String[1000];
+		n=l;
+		l=0;
+		while(rs.next())	
+		{
+			fact[l]=rs.getString("Facts").toLowerCase();
+			l++;
+		}
+		
+		int total=(int)Math.pow(2, n);
+		con.close();
+		System.out.print(n);
+		connectionURL =  "jdbc:mysql://localhost/"+dbname;
+		Class.forName("com.mysql.jdbc.Driver").newInstance();
+		con = DriverManager.getConnection(connectionURL, "root", "root");
+
+		//System.out.print("ssrv");
+		long lStartTime = System.nanoTime();
+		for(int i=1;i<total;i++) {
+
+			//System.out.print("efefv");
+			StringBuilder s1 = new StringBuilder();
+			StringBuilder s2 = new StringBuilder();
+			StringBuilder s3 = new StringBuilder();
+			StringBuilder tablename= new StringBuilder();
+			tablename.append("dim");
+			if(isPowerOf2(i)){
+				for(int j=0;j<32;j++) {
+					if ((i & (1 << j)) != 0) {
+						tablename.append(String.valueOf(j+1));
+						s1.append(dimensions[j]);
+					}
+				}
+				if(aggr_name.equals("average"))
+					aggr_name="avg";
+					String query="CREATE table "+tablename.toString()+" Select "+s1.toString()+","+aggr_name+"("+fact1+")"+ " FROM basetable GROUP BY "+s1.toString()+" having "+aggr_name+"("+fact1+")"+" >"+thres_value;
+					System.out.println(query);
+					Statement stmt1 = con.createStatement();
+					stmt1.executeUpdate(query);
+			}
+			else{
+			for(int j=0;j<32;j++) {
+				if ((i & (1 << j)) != 0) {
+					tablename.append(String.valueOf(j+1));
+					s1.append(",dim"+String.valueOf(j+1)+"."+dimensions[j]);
+					s2.append("dim"+String.valueOf(j+1)+",");
+					s3.append(" and dim"+String.valueOf(j+1)+"."+dimensions[j]+"= basetable."+dimensions[j]);
+				}
+			}
+				String temp1=s1.toString();
+				temp1=temp1.substring(1,temp1.length());
+				
+				String temp3=s3.toString();
+				temp3=temp3.substring(5,temp3.length());
+				
+				String temp2=s2.toString();
+				String query="CREATE table "+tablename.toString()+" Select "+temp1+" ,"+aggr_name+"(basetable."+fact1+")"+" FROM "+temp2+" basetable where "+temp3+" GROUP BY "+temp1+" having "+aggr_name+"("+fact1+")"+" >"+thres_value;
+				System.out.println(query);
+				Statement stmt2 = con.createStatement();
+				stmt2.executeUpdate(query);
+			}
+		}
+		long lEndTime = System.nanoTime();
+		long Icebergtime=(lEndTime-lStartTime)/10000000; //10000000;
+		//insert("i into application.time (Iceberg_cube_time) where Full_cube_time is not null values(?) ",String.valueOf(Icebergtime));
+		String qwer="update application.time set Iceberg_cube_time="+String.valueOf(Icebergtime)+" where Full_cube_time is not null";
+		connectionURL =  "jdbc:mysql://localhost/"+dbname;
+		Class.forName("com.mysql.jdbc.Driver").newInstance();
+		con = DriverManager.getConnection(connectionURL, "root", "root");
+
+		Statement stmt3=con.createStatement();
+		stmt3.executeUpdate(qwer);
+	}
+}

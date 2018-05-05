@@ -1,0 +1,26 @@
+<?xml version = "1.0"?>
+<Cube name="demo_cube">
+   <dimension name = "Product">
+      <pcolumn>product_id</pcolumn>
+      <column>product_name</column>
+   </dimension>
+ 
+   <facts name = "FACT">
+      <fact>sales_price</fact> 	  
+   </facts>
+     
+   <aggregates>
+   <aggregate>ag_sum</aggregate>
+   </aggregates>
+   
+   <userchoices>
+   <dim>Product</dim>
+   <fac>sales_price</fac>
+   <agre>sum</agre>
+   </userchoices>
+</Cube>
+
+
+
+
+
